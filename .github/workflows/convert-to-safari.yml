@@ -17,33 +17,23 @@ jobs:
           BUILD_DIR="./safari_build"
           mkdir -p "$BUILD_DIR"
           xcrun safari-web-extension-converter "$SOURCE_DIR" --project-location "$BUILD_DIR" --no-open
-          echo ""
-          echo "=== Contents of BUILD_DIR ==="
-          find "$BUILD_DIR" -maxdepth 4 -type d | head -50
-          echo ""
-          echo "=== Xcode projects ==="
-          find "$BUILD_DIR" -name "*.xcodeproj" -type d 2>/dev/null
 
       - name: Build Xcode project (disable code signing)
         run: |
           set -e
           BUILD_DIR="./safari_build"
-          # Find .xcodeproj recursively
           PROJECT_PATH=$(find "$BUILD_DIR" -name "*.xcodeproj" -type d 2>/dev/null | head -n1)
-          if [ -z "$PROJECT_PATH" ]; then
-            echo "ERROR: No .xcodeproj found anywhere under $BUILD_DIR"
-            find "$BUILD_DIR" -maxdepth 5 -type d -print
-            exit 2
-          fi
-          echo "Project found at: $PROJECT_PATH"
-          PROJECT_NAME=$(basename "$PROJECT_PATH" .xcodeproj)
-          echo "Project name: $PROJECT_NAME"
+          if [ -z "$PROJECT_PATH" ]; then exit 2; fi
           
-          # List schemes
-          xcodebuild -project "$PROJECT_PATH" -list 2>&1
+          # List schemes and find the macOS one
+          echo "Available schemes:"
+          xcodebuild -project "$PROJECT_PATH" -list 2>&1 | grep -E "^\s+\S"
           
-          # Build for macOS (Safari extension on macOS)
-          xcodebuild -project "$PROJECT_PATH" -scheme "$PROJECT_NAME" -configuration Release \
+          # Get the macOS scheme name
+          SCHEME=$(xcodebuild -project "$PROJECT_PATH" -list 2>&1 | grep "(macOS)" | head -n1 | sed 's/^[[:space:]]*//')
+          echo "Using scheme: $SCHEME"
+          
+          xcodebuild -project "$PROJECT_PATH" -scheme "$SCHEME" -configuration Release \
             BUILD_DIR="$(pwd)/$BUILD_DIR/build" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
@@ -55,12 +45,9 @@ jobs:
         run: |
           set -e
           BUILD_DIR="./safari_build"
-          echo "Looking for .app in $BUILD_DIR/build:"
-          find "$BUILD_DIR" -name "*.app" -maxdepth 8 -type d 2>/dev/null || echo "No .app found"
-          
           APP_PATH=$(find "$BUILD_DIR" -name "*.app" -maxdepth 8 -type d 2>/dev/null | head -n1 || true)
           if [ -z "$APP_PATH" ]; then
-            echo "No .app produced. Trying Release directory..."
+            echo "No .app found. Searching..."
             find "$BUILD_DIR" -name "*.app" -maxdepth 10 -type d 2>/dev/null || true
             exit 3
           fi
@@ -68,7 +55,7 @@ jobs:
           ZIP_NAME="safari-extension-build.zip"
           rm -f "$ZIP_NAME"
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$BUILD_DIR/$ZIP_NAME"
-          echo "ZIP created at: $BUILD_DIR/$ZIP_NAME"
+          ls -la "$BUILD_DIR/$ZIP_NAME"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
