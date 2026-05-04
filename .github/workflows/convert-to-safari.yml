@@ -27,20 +27,15 @@ jobs:
         run: |
           set -e
           BUILD_DIR="./safari_build"
+          # Use find with -print0 and xargs -0 for spaces in paths
+          find "$BUILD_DIR" -name "ViewController.swift" -print0 | xargs -0 sed -i '' 's/-------/safari/g'
+          find "$BUILD_DIR" -path "*/Extension/*" -name "Info.plist" -print0 | xargs -0 sed -i '' 's/-------/safari/g'
           
-          # Fix the ViewController.swift - replace all occurrences of ------- in bundle ID
-          find "$BUILD_DIR" -name "ViewController.swift" -exec sed -i '' 's/-------\.Extension/safari.Extension/g' {} \;
-          find "$BUILD_DIR" -name "ViewController.swift" -exec sed -i '' 's/-------/safari/g' {} \;
-          
-          # Fix Info.plist for the extension
-          find "$BUILD_DIR" -name "Info.plist" -path "*/Extension/*" -exec sed -i '' 's/-------/safari/g' {} \;
-          
-          echo "=== Patched ViewController.swift ==="
-          grep -n "extensionBundleIdentifier" $(find "$BUILD_DIR" -name "ViewController.swift")
-          
-          echo ""
-          echo "=== Extension Info.plist bundle IDs ==="
-          find "$BUILD_DIR" -path "*/Extension/*" -name "Info.plist" -exec grep -A1 "CFBundleIdentifier" {} \;
+          # Verify (without set -e)
+          echo "=== ViewController bundle ID ==="
+          grep "extensionBundleIdentifier" $(find "$BUILD_DIR" -name "ViewController.swift" -print0 | head -1) || true
+          echo "=== Extension bundle IDs ==="
+          find "$BUILD_DIR" -path "*/Extension/*" -name "Info.plist" -exec grep -A1 "CFBundleIdentifier" {} \; || true
 
       - name: Build
         run: |
