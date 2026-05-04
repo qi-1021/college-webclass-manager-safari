@@ -23,42 +23,24 @@ jobs:
             --bundle-identifier "com.collegesouti.safari" \
             --no-open
 
-      - name: Replace ViewController with auto-launch version
+      - name: Patch and replace ViewController
         run: |
           set -e
           BUILD_DIR="./safari_build"
           
-          # Fix bundle IDs first
+          # Fix bundle IDs
           find "$BUILD_DIR" -name "ViewController.swift" -print0 | xargs -0 sed -i '' 's/-------/safari/g'
           find "$BUILD_DIR" -path "*/Extension/*" -name "Info.plist" -print0 | xargs -0 sed -i '' 's/-------/safari/g'
           
-          # Read the correct extension bundle ID from the generated code
-          EXT_ID=$(grep "extensionBundleIdentifier" $(find "$BUILD_DIR" -name "ViewController.swift" -print0 | head -1) | sed 's/.*"\(.*\)".*/\1/')
-          echo "Using extension ID: $EXT_ID"
+          # Get the correct extension ID from generated code
+          EXT_ID=$(grep "extensionBundleIdentifier" $(find "$BUILD_DIR" -name "ViewController.swift" | head -1) | sed 's/.*"\(.*\)".*/\1/')
+          echo "Extension ID: $EXT_ID"
           
-          # Replace ViewController with auto-launch version (no button needed)
-          cat > "$(find "$BUILD_DIR" -name "ViewController.swift" | head -1)" << SWIFT
-import Cocoa
-import SafariServices
-
-let extensionBundleIdentifier = "$EXT_ID"
-
-class ViewController: NSViewController {
-    
-    override func viewDidAppear() {
-        super.viewDidAppear()
-        SFSafariApplication.showPreferencesForExtension(withIdentifier: extensionBundleIdentifier) { error in
-            if let error = error {
-                print("Error showing Safari preferences: \\(error.localizedDescription)")
-            }
-            DispatchQueue.main.async {
-                NSApplication.shared.terminate(nil)
-            }
-        }
-    }
-    
-}
-SWIFT
+          # Copy auto-launch ViewController with correct bundle ID
+          VCFILE=$(find "$BUILD_DIR" -name "ViewController.swift" | head -1)
+          sed "s/__EXTENSION_BUNDLE_ID__/$EXT_ID/g" ./AutoLaunchViewController.swift > "$VCFILE"
+          echo "Patched ViewController:"
+          cat "$VCFILE"
 
       - name: Build
         run: |
