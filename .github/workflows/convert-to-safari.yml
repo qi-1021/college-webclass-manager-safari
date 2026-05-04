@@ -27,7 +27,6 @@ jobs:
         run: |
           set -e
           BUILD_DIR="./safari_build"
-          # Replace ------- in all Swift and plist files
           find "$BUILD_DIR" \( -name "*.swift" -o -name "Info.plist" \) -print0 | xargs -0 sed -i '' 's/-------/safari/g'
 
       - name: Replace ViewController with auto-launch
@@ -35,20 +34,14 @@ jobs:
         run: |
           set -e
           BUILD_DIR="./safari_build"
-          # Find ViewController.swift safely (handle spaces in path)
           VC_FILE=$(find "$BUILD_DIR" -name "ViewController.swift" -type f | head -1)
           echo "VC file: $VC_FILE"
-          
-          # Read the extension ID from the now-patched ViewController
           EXT_ID=$(grep "extensionBundleIdentifier" "$VC_FILE" | sed 's/.*"\(.*\)".*/\1/')
           echo "Extension ID: $EXT_ID"
-          
           if [ -z "$EXT_ID" ]; then
             echo "ERROR: Could not extract extension ID"
             exit 1
           fi
-          
-          # Write replacement ViewController
           cat > "$VC_FILE" << SWIFT
 import Cocoa
 import SafariServices
@@ -61,7 +54,7 @@ class ViewController: NSViewController {
         super.viewDidAppear()
         SFSafariApplication.showPreferencesForExtension(withIdentifier: extensionBundleIdentifier) { error in
             if let error = error {
-                print("Error: \\(error.localizedDescription)")
+                print("Error: \(error.localizedDescription)")
             }
             DispatchQueue.main.async {
                 NSApplication.shared.terminate(nil)
@@ -71,7 +64,6 @@ class ViewController: NSViewController {
     
 }
 SWIFT
-          echo "Done. File written to: $VC_FILE"
 
       - name: Build
         run: |
