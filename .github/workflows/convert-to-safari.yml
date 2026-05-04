@@ -1,0 +1,43 @@
+name: Convert Chrome Extension -> Safari Web Extension
+
+on:
+  workflow_dispatch:
+
+jobs:
+  convert-and-build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Run safari-web-extension-converter
+        run: |
+          set -e
+          SOURCE_DIR="."
+          BUILD_DIR="./safari_build"
+          mkdir -p "$BUILD_DIR"
+          xcrun safari-web-extension-converter "$SOURCE_DIR" --project-location "$BUILD_DIR" --no-open
+
+      - name: Build Xcode project (disable code signing)
+        run: |
+          set -e
+          BUILD_DIR="./safari_build"
+          PROJECT_PATH=$(ls "$BUILD_DIR"/*.xcodeproj 2>/dev/null | head -n1)
+          if [ -z "$PROJECT_PATH" ]; then exit 2; fi
+          PROJECT_NAME=$(basename "$PROJECT_PATH" .xcodeproj)
+          xcodebuild -project "$PROJECT_PATH" -scheme "$PROJECT_NAME" -configuration Release BUILD_DIR="$(pwd)/$BUILD_DIR/build" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" -allowProvisioningUpdates build
+
+      - name: Package built .app
+        run: |
+          set -e
+          BUILD_DIR="./safari_build"
+          APP_PATH=$(find "$BUILD_DIR"/build -name "*.app" -maxdepth 6 | head -n1 || true)
+          if [ -z "$APP_PATH" ]; then exit 3; fi
+          ZIP_NAME="safari-extension-build.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$BUILD_DIR/$ZIP_NAME"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: safari-extension-build
+          path: safari_build/*.zip
