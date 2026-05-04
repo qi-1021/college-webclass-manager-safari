@@ -1,0 +1,60 @@
+name: Build Safari Extension
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: |
+          set -e
+          CLEAN_DIR="./clean_source"
+          mkdir -p "$CLEAN_DIR"
+          rsync -a --exclude='.git' ./ "$CLEAN_DIR/"
+          BUILD_DIR="./safari_build"
+          mkdir -p "$BUILD_DIR"
+          xcrun safari-web-extension-converter "$CLEAN_DIR" --project-location "$BUILD_DIR" --bundle-identifier "com.collegesouti.safari" --no-open
+
+      - run: |
+          set -e
+          BUILD_DIR="./safari_build"
+          find "$BUILD_DIR" -name "*.swift" -print0 | xargs -0 sed -i '' 's/-------/safari/g'
+          find "$BUILD_DIR" -path "*/Extension/*" -name "Info.plist" -print0 | xargs -0 sed -i '' 's/-------/safari/g'
+          VC_FILE=$(find "$BUILD_DIR" -name "ViewController.swift" -type f | head -1)
+          EXT_ID=$(grep "extensionBundleIdentifier" "$VC_FILE" | sed 's/.*"\(.*\)".*/\1/')
+          cat > "$VC_FILE" << SWIFT
+import Cocoa
+import SafariServices
+let extensionBundleIdentifier = "$EXT_ID"
+class ViewController: NSViewController {
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        SFSafariApplication.showPreferencesForExtension(withIdentifier: extensionBundleIdentifier) { error in
+            DispatchQueue.main.async {
+                NSApplication.shared.terminate(nil)
+            }
+        }
+    }
+}
+SWIFT
+
+      - run: |
+          BUILD_DIR="./safari_build"
+          PROJECT_PATH=$(find "$BUILD_DIR" -name "*.xcodeproj" -type d | head -n1)
+          SCHEME=$(xcodebuild -project "$PROJECT_PATH" -list 2>&1 | grep "(macOS)" | head -n1 | sed 's/^[[:space:]]*//')
+          rm -rf "$BUILD_DIR/build"
+          xcodebuild -project "$PROJECT_PATH" -scheme "$SCHEME" -configuration Release BUILD_DIR="$(pwd)/$BUILD_DIR/build" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" -allowProvisioningUpdates build
+
+      - run: |
+          BUILD_DIR="./safari_build"
+          APP_PATH=$(find "$BUILD_DIR" -name "*.app" -maxdepth 8 -type d | head -n1)
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$BUILD_DIR/safari-extension-build.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: safari-extension-build
+          path: safari_build/*.zip
