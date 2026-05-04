@@ -10,27 +10,37 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Convert and show generated source
+      - name: Convert
         run: |
           set -e
           CLEAN_DIR="./clean_source"
           mkdir -p "$CLEAN_DIR"
           rsync -a --exclude='.git' ./ "$CLEAN_DIR/"
-          
           BUILD_DIR="./safari_build"
           mkdir -p "$BUILD_DIR"
-          
           xcrun safari-web-extension-converter "$CLEAN_DIR" \
             --project-location "$BUILD_DIR" \
             --bundle-identifier "com.collegesouti.safari" \
             --no-open
+
+      - name: Patch bundle identifiers
+        run: |
+          set -e
+          BUILD_DIR="./safari_build"
           
-          echo "=== ViewController.swift ==="
-          find "$BUILD_DIR" -name "ViewController.swift" -exec cat {} \;
+          # Fix the ViewController.swift - replace all occurrences of ------- in bundle ID
+          find "$BUILD_DIR" -name "ViewController.swift" -exec sed -i '' 's/-------\.Extension/safari.Extension/g' {} \;
+          find "$BUILD_DIR" -name "ViewController.swift" -exec sed -i '' 's/-------/safari/g' {} \;
+          
+          # Fix Info.plist for the extension
+          find "$BUILD_DIR" -name "Info.plist" -path "*/Extension/*" -exec sed -i '' 's/-------/safari/g' {} \;
+          
+          echo "=== Patched ViewController.swift ==="
+          grep -n "extensionBundleIdentifier" $(find "$BUILD_DIR" -name "ViewController.swift")
           
           echo ""
-          echo "=== AppDelegate.swift ==="
-          find "$BUILD_DIR" -name "AppDelegate.swift" -exec cat {} \;
+          echo "=== Extension Info.plist bundle IDs ==="
+          find "$BUILD_DIR" -path "*/Extension/*" -name "Info.plist" -exec grep -A1 "CFBundleIdentifier" {} \;
 
       - name: Build
         run: |
