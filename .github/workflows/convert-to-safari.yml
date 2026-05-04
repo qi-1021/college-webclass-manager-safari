@@ -23,24 +23,55 @@ jobs:
             --bundle-identifier "com.collegesouti.safari" \
             --no-open
 
-      - name: Patch and replace ViewController
+      - name: Patch extension bundle ID
         run: |
           set -e
           BUILD_DIR="./safari_build"
+          # Replace ------- in all Swift and plist files
+          find "$BUILD_DIR" \( -name "*.swift" -o -name "Info.plist" \) -print0 | xargs -0 sed -i '' 's/-------/safari/g'
+
+      - name: Replace ViewController with auto-launch
+        shell: bash
+        run: |
+          set -e
+          BUILD_DIR="./safari_build"
+          # Find ViewController.swift safely (handle spaces in path)
+          VC_FILE=$(find "$BUILD_DIR" -name "ViewController.swift" -type f | head -1)
+          echo "VC file: $VC_FILE"
           
-          # Fix bundle IDs
-          find "$BUILD_DIR" -name "ViewController.swift" -print0 | xargs -0 sed -i '' 's/-------/safari/g'
-          find "$BUILD_DIR" -path "*/Extension/*" -name "Info.plist" -print0 | xargs -0 sed -i '' 's/-------/safari/g'
-          
-          # Get the correct extension ID from generated code
-          EXT_ID=$(grep "extensionBundleIdentifier" $(find "$BUILD_DIR" -name "ViewController.swift" | head -1) | sed 's/.*"\(.*\)".*/\1/')
+          # Read the extension ID from the now-patched ViewController
+          EXT_ID=$(grep "extensionBundleIdentifier" "$VC_FILE" | sed 's/.*"\(.*\)".*/\1/')
           echo "Extension ID: $EXT_ID"
           
-          # Copy auto-launch ViewController with correct bundle ID
-          VCFILE=$(find "$BUILD_DIR" -name "ViewController.swift" | head -1)
-          sed "s/__EXTENSION_BUNDLE_ID__/$EXT_ID/g" ./AutoLaunchViewController.swift > "$VCFILE"
-          echo "Patched ViewController:"
-          cat "$VCFILE"
+          if [ -z "$EXT_ID" ]; then
+            echo "ERROR: Could not extract extension ID"
+            exit 1
+          fi
+          
+          # Write replacement ViewController
+          cat > "$VC_FILE" << SWIFT
+import Cocoa
+import SafariServices
+
+let extensionBundleIdentifier = "$EXT_ID"
+
+class ViewController: NSViewController {
+    
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        SFSafariApplication.showPreferencesForExtension(withIdentifier: extensionBundleIdentifier) { error in
+            if let error = error {
+                print("Error: \\(error.localizedDescription)")
+            }
+            DispatchQueue.main.async {
+                NSApplication.shared.terminate(nil)
+            }
+        }
+    }
+    
+}
+SWIFT
+          echo "Done. File written to: $VC_FILE"
 
       - name: Build
         run: |
