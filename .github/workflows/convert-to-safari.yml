@@ -13,30 +13,30 @@ jobs:
       - name: Copy source to clean dir and convert
         run: |
           set -e
-          # Copy source to a clean temp dir so safari_build doesn't get copied as resource
           CLEAN_DIR="./clean_source"
           mkdir -p "$CLEAN_DIR"
-          # Copy everything except .git into clean dir
           rsync -a --exclude='.git' ./ "$CLEAN_DIR/"
           
           BUILD_DIR="./safari_build"
           mkdir -p "$BUILD_DIR"
           
-          xcrun safari-web-extension-converter "$CLEAN_DIR" --project-location "$BUILD_DIR" --no-open
-          
-          echo "=== Project structure ==="
-          find "$BUILD_DIR" -maxdepth 3 -type d
+          # Set a proper bundle identifier to avoid placeholder
+          xcrun safari-web-extension-converter "$CLEAN_DIR" \
+            --project-location "$BUILD_DIR" \
+            --bundle-identifier "com.collegesouti.safari" \
+            --no-open
 
       - name: Build Xcode project (disable code signing)
         run: |
           set -e
           BUILD_DIR="./safari_build"
           PROJECT_PATH=$(find "$BUILD_DIR" -name "*.xcodeproj" -type d 2>/dev/null | head -n1)
-          if [ -z "$PROJECT_PATH" ]; then exit 2; fi
           
-          # Find macOS scheme
           SCHEME=$(xcodebuild -project "$PROJECT_PATH" -list 2>&1 | grep "(macOS)" | head -n1 | sed 's/^[[:space:]]*//')
           echo "Using scheme: $SCHEME"
+          
+          # First clean any previous build artifacts
+          rm -rf "$BUILD_DIR/build"
           
           xcodebuild -project "$PROJECT_PATH" -scheme "$SCHEME" -configuration Release \
             BUILD_DIR="$(pwd)/$BUILD_DIR/build" \
@@ -50,15 +50,10 @@ jobs:
         run: |
           set -e
           BUILD_DIR="./safari_build"
-          APP_PATH=$(find "$BUILD_DIR" -name "*.app" -maxdepth 8 -type d 2>/dev/null | head -n1 || true)
-          if [ -z "$APP_PATH" ]; then
-            echo "No .app found. Searching..."
-            find "$BUILD_DIR" -maxdepth 10 -type d 2>/dev/null || true
-            exit 3
-          fi
+          APP_PATH=$(find "$BUILD_DIR" -name "*.app" -maxdepth 8 -type d 2>/dev/null | head -n1)
+          if [ -z "$APP_PATH" ]; then exit 3; fi
           echo "Found app at: $APP_PATH"
           ZIP_NAME="safari-extension-build.zip"
-          rm -f "$ZIP_NAME"
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$BUILD_DIR/$ZIP_NAME"
           ls -la "$BUILD_DIR/$ZIP_NAME"
 
