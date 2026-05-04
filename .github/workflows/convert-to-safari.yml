@@ -10,13 +10,22 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Run safari-web-extension-converter
+      - name: Copy source to clean dir and convert
         run: |
           set -e
-          SOURCE_DIR="."
+          # Copy source to a clean temp dir so safari_build doesn't get copied as resource
+          CLEAN_DIR="./clean_source"
+          mkdir -p "$CLEAN_DIR"
+          # Copy everything except .git into clean dir
+          rsync -a --exclude='.git' ./ "$CLEAN_DIR/"
+          
           BUILD_DIR="./safari_build"
           mkdir -p "$BUILD_DIR"
-          xcrun safari-web-extension-converter "$SOURCE_DIR" --project-location "$BUILD_DIR" --no-open
+          
+          xcrun safari-web-extension-converter "$CLEAN_DIR" --project-location "$BUILD_DIR" --no-open
+          
+          echo "=== Project structure ==="
+          find "$BUILD_DIR" -maxdepth 3 -type d
 
       - name: Build Xcode project (disable code signing)
         run: |
@@ -25,11 +34,7 @@ jobs:
           PROJECT_PATH=$(find "$BUILD_DIR" -name "*.xcodeproj" -type d 2>/dev/null | head -n1)
           if [ -z "$PROJECT_PATH" ]; then exit 2; fi
           
-          # List schemes and find the macOS one
-          echo "Available schemes:"
-          xcodebuild -project "$PROJECT_PATH" -list 2>&1 | grep -E "^\s+\S"
-          
-          # Get the macOS scheme name
+          # Find macOS scheme
           SCHEME=$(xcodebuild -project "$PROJECT_PATH" -list 2>&1 | grep "(macOS)" | head -n1 | sed 's/^[[:space:]]*//')
           echo "Using scheme: $SCHEME"
           
@@ -48,7 +53,7 @@ jobs:
           APP_PATH=$(find "$BUILD_DIR" -name "*.app" -maxdepth 8 -type d 2>/dev/null | head -n1 || true)
           if [ -z "$APP_PATH" ]; then
             echo "No .app found. Searching..."
-            find "$BUILD_DIR" -name "*.app" -maxdepth 10 -type d 2>/dev/null || true
+            find "$BUILD_DIR" -maxdepth 10 -type d 2>/dev/null || true
             exit 3
           fi
           echo "Found app at: $APP_PATH"
