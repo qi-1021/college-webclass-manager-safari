@@ -10,7 +10,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Copy source to clean dir and convert
+      - name: Convert and show generated source
         run: |
           set -e
           CLEAN_DIR="./clean_source"
@@ -20,44 +20,38 @@ jobs:
           BUILD_DIR="./safari_build"
           mkdir -p "$BUILD_DIR"
           
-          # Set a proper bundle identifier to avoid placeholder
           xcrun safari-web-extension-converter "$CLEAN_DIR" \
             --project-location "$BUILD_DIR" \
             --bundle-identifier "com.collegesouti.safari" \
             --no-open
+          
+          echo "=== ViewController.swift ==="
+          find "$BUILD_DIR" -name "ViewController.swift" -exec cat {} \;
+          
+          echo ""
+          echo "=== AppDelegate.swift ==="
+          find "$BUILD_DIR" -name "AppDelegate.swift" -exec cat {} \;
 
-      - name: Build Xcode project (disable code signing)
+      - name: Build
         run: |
           set -e
           BUILD_DIR="./safari_build"
-          PROJECT_PATH=$(find "$BUILD_DIR" -name "*.xcodeproj" -type d 2>/dev/null | head -n1)
-          
+          PROJECT_PATH=$(find "$BUILD_DIR" -name "*.xcodeproj" -type d | head -n1)
           SCHEME=$(xcodebuild -project "$PROJECT_PATH" -list 2>&1 | grep "(macOS)" | head -n1 | sed 's/^[[:space:]]*//')
-          echo "Using scheme: $SCHEME"
-          
-          # First clean any previous build artifacts
           rm -rf "$BUILD_DIR/build"
-          
           xcodebuild -project "$PROJECT_PATH" -scheme "$SCHEME" -configuration Release \
             BUILD_DIR="$(pwd)/$BUILD_DIR/build" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            -allowProvisioningUpdates \
-            build 2>&1
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            -allowProvisioningUpdates build 2>&1
 
-      - name: Package built .app
+      - name: Package
         run: |
           set -e
           BUILD_DIR="./safari_build"
-          APP_PATH=$(find "$BUILD_DIR" -name "*.app" -maxdepth 8 -type d 2>/dev/null | head -n1)
-          if [ -z "$APP_PATH" ]; then exit 3; fi
-          echo "Found app at: $APP_PATH"
-          ZIP_NAME="safari-extension-build.zip"
-          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$BUILD_DIR/$ZIP_NAME"
-          ls -la "$BUILD_DIR/$ZIP_NAME"
+          APP_PATH=$(find "$BUILD_DIR" -name "*.app" -maxdepth 8 -type d | head -n1)
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$BUILD_DIR/safari-extension-build.zip"
 
-      - name: Upload artifact
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: safari-extension-build
